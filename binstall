@@ -117,7 +117,7 @@ else
 
   # showing a hint when installing a development version that is different from the
   # active version
-  envName="BVER_${name^^}_VERSION"
+  envName="BVER_MAYA$(majorver $BVER_MAYA_VERSION)_${name^^}_VERSION"
   if [[ "${!envName}" != "$version" ]]; then
     echo -e "\e[00;31m\nThe env $envName is pointing to a different version\n\e[00mYou are installing version $version. However, your environment is pointing to version ${!envName}\n\nIn case you want to run the version you are installing, override the version on the environment by running:\nexport $envName=$version\n"
   fi
