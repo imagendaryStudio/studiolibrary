@@ -1,0 +1,124 @@
+#!/bin/bash
+
+# showing help
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  echo "$(basename "$0") [-h] -- Runs the installation:
+    -h/--help      show this help text
+    --production   installs as production release (under BACKBONE_ROOT). Otherwise, if not supplied installs under BACKBONE_DEV_ROOT (default)
+    --clean        purges the data used for building both production and development releases"
+  exit 0
+fi
+
+# purging caches
+if [[ $* == *--clean* ]]; then
+  if [[ -d "build" ]]; then
+    rm -r "build"
+  fi
+  exit 0
+fi
+
+# reading info.json
+name=$(grep -Po "\"name\": *\K\"[^\"]*\"" info.json | cut -d '"' -f 2)
+type=$(grep -Po "\"type\": *\K\"[^\"]*\"" info.json | cut -d '"' -f 2)
+version=$(grep -Po "\"version\": *\K\"[^\"]*\"" info.json | cut -d '"' -f 2)
+if [[ -z "$type" || -z "$name" || -z "$version" ]]; then
+  echo "Error, missing type, name or version from info.json"
+  exit 1
+fi
+targetSuffixPath="$type/$name/$version"
+
+# production release
+if [[ $* == *--production* ]]; then
+  # making sure BACKBONE_ROOT is defined
+  if [[ -z $BACKBONE_ROOT ]]; then
+    echo "BACKBONE_ROOT is not defined!"
+    exit 1
+  fi
+
+  if [[ "$IMGPIPE_DEPLOYMENT_IGNORE_PROMPT" == "1" ]]; then
+    response="yes"
+  # showing a prompt confirmation to avoid mistakes
+  else
+    read -r -p "Are you sure you want to run the production release? [y/N] " response
+  fi
+
+  if [[ "$response" =~ ^(yes|y)$ ]]; then
+    # running installation
+    target="$BACKBONE_ROOT/$targetSuffixPath"
+    if [[ "$BSYS_OS" == "windows" ]]; then
+      target=$(cygpath -w "$target" | tr '\\' '/')
+    fi
+    if [[ -e "$target" ]]; then
+      echo "Cannot override an existent production release: $target"
+      exit 1
+    fi
+
+    # Since this config lives on the server, creating a build dirctory
+    # on tmp for this module to speed-up things.
+    buildDirectory=$(cygpath -w "$(mktemp --tmpdir -d $name-build-production.XXXXXXXXX)" | tr '\\' '/')
+
+    # building the target on a temporary directory.
+    # This is used to set the permissions, creating archive before moving it
+    # to the production production
+    temporaryTargetOutput=$(cygpath -w "$(mktemp --tmpdir -d $name-target.XXXXXXXXX)"  | tr '\\' '/')
+    cmake -DCMAKE_INSTALL_PREFIX="$temporaryTargetOutput" -B$buildDirectory
+    cmake --install $buildDirectory --prefix="$temporaryTargetOutput"
+
+    info="$temporaryTargetOutput/info.json"
+    if [[ ! -f "$info" ]]; then
+      echo "Error, could not find expected file: $info"
+      exit 1
+    fi
+
+    # creating archive
+    cd "$(dirname $temporaryTargetOutput)"
+    archiveres "$(basename $temporaryTargetOutput)"
+
+    archiveChecksum="$temporaryTargetOutput/barchive.checksum"
+    archiveData="$temporaryTargetOutput/barchive.tar.gz"
+    if [[ ! -f "$archiveChecksum" ]]; then
+      echo "Error, could not find expected file: $archiveChecksum"
+      exit 1
+    elif [[ ! -f "$archiveData" ]]; then
+      echo "Error, could not find expected file: $archiveData"
+      exit 1
+    fi
+
+    # copying files to the target
+    mkdir -p $target
+    cp $archiveChecksum $archiveData $target/
+
+    if [[ ! -f "$target/barchive.tar.gz" || ! -f "$target/barchive.checksum"  ]]; then
+      echo "Error, could not copy archive files to the target: $target"
+      exit 1
+    fi
+
+    echo "Production deployment completed: $target"
+
+    # updating bver-config
+    bverautobump $name=$version
+  fi
+# development release
+else
+
+  # making sure BACKBONE_DEV_ROOT is defined
+  if [[ -z $BACKBONE_DEV_ROOT ]]; then
+    echo "BACKBONE_DEV_ROOT is not defined"
+    exit 1
+  fi
+
+  # preparing build
+  buildDirectory=$(cygpath -w "$(mktemp --tmpdir -d $name-build-dev.XXXXXXXXX)" | tr '\\' '/')
+
+  # running installation
+  target=$(cygpath -w "$BACKBONE_DEV_ROOT/$targetSuffixPath" | tr '\\' '/')
+  cmake -DCMAKE_INSTALL_PREFIX="$target" -B$buildDirectory
+  cmake --install $buildDirectory --prefix="$target"
+
+  # showing a hint when installing a development version that is different from the
+  # active version
+  envName="BVER_MAYA$(majorver $BVER_MAYA_VERSION)_${name^^}_VERSION"
+  if [[ "${!envName}" != "$version" ]]; then
+    echo -e "\e[00;31m\nThe env $envName is pointing to a different version\n\e[00mYou are installing version $version. However, your environment is pointing to version ${!envName}\n\nIn case you want to run the version you are installing, override the version on the environment by running:\nexport $envName=$version\n"
+  fi
+fi
