@@ -91,6 +91,8 @@ def savePose(path, objects, metadata=None):
     :type metadata: dict or None
     :rtype: Pose
     """
+    # imagendary - extend with _Options shapes
+    objects = mutils.imgObjectsWithOptionsShapes(objects)
     pose = mutils.Pose.fromObjects(objects)
 
     if metadata:
@@ -465,6 +467,9 @@ class Pose(mutils.TransferObject):
             if searchAndReplace:
                 search = searchAndReplace[0]
                 replace = searchAndReplace[1]
+
+            # imagendary - extend with _Options shapes
+            dstObjects = mutils.imgObjectsWithOptionsShapes(dstObjects)
 
             matches = mutils.matchNames(
                 srcObjects,
