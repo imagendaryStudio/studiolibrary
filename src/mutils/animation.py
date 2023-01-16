@@ -125,6 +125,9 @@ def saveAnim(
         shutil.move(sequencePath, path + "/sequence")
 
     # Save the animation to the temp location
+    # imagendary - extend with _Options shapes
+    objects = mutils.imgObjectsWithOptionsShapes(objects)
+
     anim = mutils.Animation.fromObjects(objects)
     anim.updateMetadata(metadata)
     anim.save(
@@ -642,8 +645,18 @@ class Animation(mutils.Pose):
 
             for name in objects:
                 if maya.cmds.copyKey(name, time=(start, end), includeUpperBound=False, option="keys"):
-                    dup_node = self._duplicate_node(name, "CURVE")
-                    # dup_node, = maya.cmds.duplicate(name, name="CURVE", parentOnly=True)
+                    # imagendary addition to include shape anim
+                    if maya.cmds.objectType(name, isAType="shape"):
+                        parentTransform, = maya.cmds.duplicate(name, name="CURVE")
+                        shapes = maya.cmds.listRelatives(parentTransform, shapes=True)
+                        for shape in shapes:
+                            if name.split(":")[-1] == shape.split("|")[-1]:
+                                dup_node = shape
+                                break
+                        deleteObjects.append(parentTransform)
+                    else:
+                        # Might return more than one object when duplicating shapes or blendshapes
+                        dup_node = self._duplicate_node(name, "CURVE")
 
                     if not FIX_SAVE_ANIM_REFERENCE_LOCKED_ERROR:
                         mutils.disconnectAll(dup_node)
@@ -755,6 +768,9 @@ class Animation(mutils.Pose):
                      (len(objects), str(option), str(namespaces), str(sourceTime), str(currentTime)))
 
         srcObjects = self.objects().keys()
+
+        # imagendary - extend with _Options shapes
+        objects = mutils.imgObjectsWithOptionsShapes(objects)
 
         if mirrorTable:
             self.setMirrorTable(mirrorTable)

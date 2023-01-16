@@ -414,3 +414,20 @@ def getReferenceData(objects):
         })
 
     return data
+
+def imgObjectsWithOptionsShapes(objects):
+    """
+    Imagendary addition to add "_Options" shapes to objects.
+    """
+    if objects is None:
+        return objects
+
+    objectsWithShapes = set()
+    for object in objects:
+        objectsWithShapes.add(object)
+        shapes = maya.cmds.listRelatives(object, shapes=True) or []
+        for shape in shapes:
+            if shape.endswith("_Options"):
+                objectsWithShapes.add(shape)
+    objects = list(objectsWithShapes)
+    return objects
